@@ -71,7 +71,7 @@ public class HttpResponseHandler extends SimpleChannelUpstreamHandler {
         if (e.getCause() instanceof ConnectException) {
             log.error("Cannot connect to {}", ctx.getChannel().getRemoteAddress());
         }
-        log.error("response handler error: {}", e);
+        log.error("response handler error:", e.getCause());
         ctx.sendUpstream(e);
     }
 }

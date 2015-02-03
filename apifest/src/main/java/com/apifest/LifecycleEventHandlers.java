@@ -87,7 +87,13 @@ public class LifecycleEventHandlers {
                             log.debug("exceptionHandlers added {}", className);
                         }
                     } catch (ClassNotFoundException e1) {
+                        log.debug("ClassNotFoundException: " + e1.getMessage());
                         // continue
+                    } catch (NoClassDefFoundError e1) {
+                        log.debug("NoClassDefFoundError: " + e1.getMessage());
+                        // continue
+                    } catch (IllegalAccessError e1) {
+                        log.debug("IllegalAccessError: " + e1.getMessage());
                     }
                 }
             }

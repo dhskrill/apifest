@@ -17,7 +17,12 @@
 package com.apifest;
 
 import java.net.InetSocketAddress;
+import java.security.KeyStore;
 import java.util.concurrent.Executors;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.TrustManagerFactory;
 
 import org.jboss.netty.bootstrap.ClientBootstrap;
 import org.jboss.netty.channel.Channel;
@@ -32,6 +37,7 @@ import org.jboss.netty.handler.codec.http.HttpChunkAggregator;
 import org.jboss.netty.handler.codec.http.HttpClientCodec;
 import org.jboss.netty.handler.codec.http.HttpRequest;
 import org.jboss.netty.handler.codec.http.HttpResponse;
+import org.jboss.netty.handler.ssl.SslHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,26 +49,56 @@ import org.slf4j.LoggerFactory;
 public final class MappingClient {
 
     private static final int MAX_CONTENT_LEN = 10 * 1024 * 1024;
+    private static final int DEFAULT_SSL_PORT = 443;
 
     private ClientBootstrap bootstrap;
+    private ClientBootstrap sslBootstrap;
     private static volatile MappingClient client;
 
     protected Logger log = LoggerFactory.getLogger(MappingClient.class);
 
+
+    private ChannelPipelineFactory createChannelPipelineFactory(final boolean useSsl) {
+        return new ChannelPipelineFactory() {
+
+            @Override
+            public ChannelPipeline getPipeline() throws Exception {
+                ChannelPipeline pipeline = Channels.pipeline();
+
+                if(useSsl) {
+                    try {
+//                        System.setProperty("javax.net.debug", "ssl");
+//                        System.setProperty("javax.net.ssl.trustStore", "C:/Dev/Java/jdk1.6.0_31/jre/lib/security/cacerts");
+
+                        TrustManagerFactory tmf=TrustManagerFactory.getInstance("PKIX");
+                        tmf.init((KeyStore)null);
+
+                        SSLContext sslc=SSLContext.getInstance("TLS");
+                        sslc.init(null, tmf.getTrustManagers(), null);
+                        SSLEngine engine=sslc.createSSLEngine();
+                        engine.setUseClientMode(true);
+                        pipeline.addLast("ssl", new SslHandler(engine));
+                    } catch (Exception e) {
+                        log.error(e.getMessage(), e);
+                        throw new Exception(e.getMessage(), e);
+                    }
+
+                    pipeline.addLast("codec", new HttpClientCodec());
+                    pipeline.addLast("aggregator", new HttpChunkAggregator(MAX_CONTENT_LEN));
+                    pipeline.addLast("handler", new HttpResponseHandler());
+                }
+
+                return pipeline;
+            }
+        };
+    }
+
     private MappingClient() {
         ChannelFactory factory = new NioClientSocketChannelFactory(Executors.newCachedThreadPool(), Executors.newCachedThreadPool());
         bootstrap = new ClientBootstrap(factory);
-        bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
-
-            @Override
-            public ChannelPipeline getPipeline() {
-                ChannelPipeline pipeline = Channels.pipeline();
-                pipeline.addLast("codec", new HttpClientCodec());
-                pipeline.addLast("aggregator", new HttpChunkAggregator(MAX_CONTENT_LEN));
-                pipeline.addLast("handler", new HttpResponseHandler());
-                return pipeline;
-            }
-        });
+        bootstrap.setPipelineFactory(createChannelPipelineFactory(false));
+        sslBootstrap = new ClientBootstrap(factory);
+        sslBootstrap.setPipelineFactory(createChannelPipelineFactory(true));
 
         bootstrap.setOption("child.tcpNoDelay", true);
         bootstrap.setOption("child.keepAlive", true);
@@ -86,7 +122,9 @@ public final class MappingClient {
      * @param responseListener listener that will handles the backend response
      */
     public void send(final HttpRequest request, String host, int port, final ResponseListener responseListener) {
-        ChannelFuture future = bootstrap.connect(new InetSocketAddress(host, port));
+        ClientBootstrap clientBootstrap = port == DEFAULT_SSL_PORT ? sslBootstrap : bootstrap;
+        ChannelFuture future = clientBootstrap.connect(new InetSocketAddress(host, port));
+
         future.addListener(new ChannelFutureListener() {
             @Override
             public void operationComplete(ChannelFuture future) {
