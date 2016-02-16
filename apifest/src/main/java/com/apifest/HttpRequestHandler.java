@@ -266,7 +266,9 @@ public class HttpRequestHandler extends SimpleChannelUpstreamHandler {
     protected void writeResponseToChannel(Channel channel, HttpRequest request, HttpResponse response) {
         LifecycleEventHandlers.invokeResponseEventHandlers(request, response);
         ChannelFuture future = channel.write(response);
-        future.addListener(ChannelFutureListener.CLOSE);
+        if (!HttpHeaders.isKeepAlive(request)) {
+            future.addListener(ChannelFutureListener.CLOSE);
+        }
     }
 
     protected void setConnectTimeout(final Channel channel) {
